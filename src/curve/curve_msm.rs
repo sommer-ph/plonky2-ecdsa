@@ -40,7 +40,7 @@ pub fn msm_precompute<C: Curve>(
 }
 
 fn precompute_single_generator<C: Curve>(g: ProjectivePoint<C>, w: usize) -> Vec<AffinePoint<C>> {
-    let digits = (C::ScalarField::BITS + w - 1) / w;
+    let digits = C::ScalarField::BITS.div_ceil(w);
     let mut powers: Vec<ProjectivePoint<C>> = Vec::with_capacity(digits);
     powers.push(g);
     for i in 1..digits {
@@ -68,7 +68,7 @@ pub fn msm_execute<C: Curve>(
 ) -> ProjectivePoint<C> {
     assert_eq!(precomputation.powers_per_generator.len(), scalars.len());
     let w = precomputation.w;
-    let digits = (C::ScalarField::BITS + w - 1) / w;
+    let digits = C::ScalarField::BITS.div_ceil(w);
     let base = 1 << w;
 
     // This is a variant of Yao's method, adapted to the multi-scalar setting. Because we use
@@ -107,7 +107,7 @@ pub fn msm_execute_parallel<C: Curve>(
 ) -> ProjectivePoint<C> {
     assert_eq!(precomputation.powers_per_generator.len(), scalars.len());
     let w = precomputation.w;
-    let digits = (C::ScalarField::BITS + w - 1) / w;
+    let digits = C::ScalarField::BITS.div_ceil(w);
     let base = 1 << w;
 
     // This is a variant of Yao's method, adapted to the multi-scalar setting. Because we use
@@ -158,7 +158,7 @@ pub fn msm_execute_parallel<C: Curve>(
 
 pub(crate) fn to_digits<C: Curve>(x: &C::ScalarField, w: usize) -> Vec<usize> {
     let scalar_bits = C::ScalarField::BITS;
-    let num_digits = (scalar_bits + w - 1) / w;
+    let num_digits = scalar_bits.div_ceil(w);
 
     // Convert x to a bool array.
     let x_canonical: Vec<_> = x

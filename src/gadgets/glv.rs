@@ -1,5 +1,9 @@
+use alloc::string::String;
 use alloc::vec::Vec;
+use anyhow::Result;
 use core::marker::PhantomData;
+use plonky2::plonk::circuit_data::CommonCircuitData;
+use plonky2::util::serialization::{Buffer, IoResult, Read, Write};
 
 use plonky2::field::extension::Extendable;
 use plonky2::field::secp256k1_base::Secp256K1Base;
@@ -109,24 +113,60 @@ struct GLVDecompositionGenerator<F: RichField + Extendable<D>, const D: usize> {
     _phantom: PhantomData<F>,
 }
 
-impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F>
+impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D>
     for GLVDecompositionGenerator<F, D>
 {
+    fn id(&self) -> String {
+        "GLVDecompositionGenerator".into()
+    }
+
     fn dependencies(&self) -> Vec<Target> {
         self.k.value.limbs.iter().map(|l| l.0).collect()
     }
 
-    fn run_once(&self, witness: &PartitionWitness<F>, out_buffer: &mut GeneratedValues<F>) {
+    fn run_once(
+        &self,
+        witness: &PartitionWitness<F>,
+        out_buffer: &mut GeneratedValues<F>,
+    ) -> Result<()> {
         let k = Secp256K1Scalar::from_noncanonical_biguint(
             witness.get_biguint_target(self.k.value.clone()),
         );
 
         let (k1, k2, k1_neg, k2_neg) = decompose_secp256k1_scalar(k);
 
-        out_buffer.set_biguint_target(&self.k1.value, &k1.to_canonical_biguint());
-        out_buffer.set_biguint_target(&self.k2.value, &k2.to_canonical_biguint());
-        out_buffer.set_bool_target(self.k1_neg, k1_neg);
-        out_buffer.set_bool_target(self.k2_neg, k2_neg);
+        out_buffer.set_biguint_target(&self.k1.value, &k1.to_canonical_biguint())?;
+        out_buffer.set_biguint_target(&self.k2.value, &k2.to_canonical_biguint())?;
+        out_buffer.set_bool_target(self.k1_neg, k1_neg)?;
+        out_buffer.set_bool_target(self.k2_neg, k2_neg)
+    }
+
+    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
+        dst.write_target_vec(&self.k.to_target_vec())?;
+        dst.write_target_vec(&self.k1.to_target_vec())?;
+        dst.write_target_vec(&self.k2.to_target_vec())?;
+        dst.write_target_bool(self.k1_neg)?;
+        dst.write_target_bool(self.k2_neg)
+    }
+
+    fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
+        let k = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let k1 = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let k2 = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let k1_neg = src.read_target_bool()?;
+        let k2_neg = src.read_target_bool()?;
+
+        Ok(Self {
+            k,
+            k1,
+            k2,
+            k1_neg,
+            k2_neg,
+            _phantom: PhantomData,
+        })
     }
 }
 

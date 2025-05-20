@@ -1,6 +1,11 @@
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
+use anyhow::Result;
 use core::marker::PhantomData;
+use num::integer::div_ceil;
+use plonky2::plonk::circuit_data::CommonCircuitData;
+use plonky2::util::serialization::{Buffer, IoError, IoResult, Read, Write};
 
 use num::{BigUint, Integer, One, Zero};
 use plonky2::field::extension::Extendable;
@@ -10,7 +15,6 @@ use plonky2::iop::generator::{GeneratedValues, SimpleGenerator};
 use plonky2::iop::target::{BoolTarget, Target};
 use plonky2::iop::witness::{PartitionWitness, WitnessWrite};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
-use plonky2::util::ceil_div_usize;
 use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
 use plonky2_u32::gadgets::range_check::range_check_u32_circuit;
 use plonky2_u32::witness::GeneratedValuesU32;
@@ -25,9 +29,22 @@ pub struct NonNativeTarget<FF: Field> {
     pub(crate) _phantom: PhantomData<FF>,
 }
 
+impl<FF: Field> NonNativeTarget<FF> {
+    pub fn to_target_vec(&self) -> Vec<Target> {
+        self.value.to_target_vec()
+    }
+
+    pub fn from_target_vec(ts: &[Target]) -> Self {
+        Self {
+            value: BigUintTarget::from_target_vec(ts),
+            _phantom: PhantomData,
+        }
+    }
+}
+
 pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> {
     fn num_nonnative_limbs<FF: Field>() -> usize {
-        ceil_div_usize(FF::BITS, 32)
+        div_ceil(FF::BITS, 32)
     }
 
     fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget) -> NonNativeTarget<FF>;
@@ -122,7 +139,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
     for CircuitBuilder<F, D>
 {
     fn num_nonnative_limbs<FF: Field>() -> usize {
-        ceil_div_usize(FF::BITS, 32)
+        div_ceil(FF::BITS, 32)
     }
 
     fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget) -> NonNativeTarget<FF> {
@@ -454,9 +471,13 @@ struct NonNativeAdditionGenerator<F: RichField + Extendable<D>, const D: usize, 
     _phantom: PhantomData<F>,
 }
 
-impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F>
+impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F, D>
     for NonNativeAdditionGenerator<F, D, FF>
 {
+    fn id(&self) -> String {
+        "NonNativeAdditionGenerator".into()
+    }
+
     fn dependencies(&self) -> Vec<Target> {
         self.a
             .value
@@ -468,7 +489,11 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
             .collect()
     }
 
-    fn run_once(&self, witness: &PartitionWitness<F>, out_buffer: &mut GeneratedValues<F>) {
+    fn run_once(
+        &self,
+        witness: &PartitionWitness<F>,
+        out_buffer: &mut GeneratedValues<F>,
+    ) -> Result<()> {
         let a = FF::from_noncanonical_biguint(witness.get_biguint_target(self.a.value.clone()));
         let b = FF::from_noncanonical_biguint(witness.get_biguint_target(self.b.value.clone()));
         let a_biguint = a.to_canonical_biguint();
@@ -481,8 +506,33 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
             (false, sum_biguint)
         };
 
-        out_buffer.set_biguint_target(&self.sum.value, &sum_reduced);
-        out_buffer.set_bool_target(self.overflow, overflow);
+        out_buffer.set_biguint_target(&self.sum.value, &sum_reduced)?;
+        out_buffer.set_bool_target(self.overflow, overflow)
+    }
+
+    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
+        dst.write_target_vec(&self.a.to_target_vec())?;
+        dst.write_target_vec(&self.b.to_target_vec())?;
+        dst.write_target_vec(&self.sum.to_target_vec())?;
+        dst.write_target_bool(self.overflow)
+    }
+
+    fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
+        let a = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let b = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let sum = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let overflow = src.read_target_bool()?;
+
+        Ok(Self {
+            a,
+            b,
+            sum,
+            overflow,
+            _phantom: PhantomData,
+        })
     }
 }
 
@@ -495,9 +545,13 @@ struct NonNativeMultipleAddsGenerator<F: RichField + Extendable<D>, const D: usi
     _phantom: PhantomData<F>,
 }
 
-impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F>
+impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F, D>
     for NonNativeMultipleAddsGenerator<F, D, FF>
 {
+    fn id(&self) -> String {
+        "NonNativeMultipleAddsGenerator".into()
+    }
+
     fn dependencies(&self) -> Vec<Target> {
         self.summands
             .iter()
@@ -505,7 +559,11 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
             .collect()
     }
 
-    fn run_once(&self, witness: &PartitionWitness<F>, out_buffer: &mut GeneratedValues<F>) {
+    fn run_once(
+        &self,
+        witness: &PartitionWitness<F>,
+        out_buffer: &mut GeneratedValues<F>,
+    ) -> Result<()> {
         let summands: Vec<_> = self
             .summands
             .iter()
@@ -526,8 +584,42 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
         let (overflow_biguint, sum_reduced) = sum_biguint.div_rem(&modulus);
         let overflow = overflow_biguint.to_u64_digits()[0] as u32;
 
-        out_buffer.set_biguint_target(&self.sum.value, &sum_reduced);
-        out_buffer.set_u32_target(self.overflow, overflow);
+        out_buffer.set_biguint_target(&self.sum.value, &sum_reduced)?;
+        out_buffer.set_u32_target(self.overflow, overflow)
+    }
+
+    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
+        let summands_len = self.summands.len();
+        dst.write_usize(summands_len)?;
+        self.summands
+            .iter()
+            .try_for_each(|summand| dst.write_target_vec(&summand.to_target_vec()))?;
+
+        dst.write_target_vec(&self.sum.to_target_vec())?;
+        dst.write_target(self.overflow.0)
+    }
+
+    fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
+        let summands_len = src.read_usize()?;
+        let summands: Vec<_> = (0..summands_len)
+            .map(|_| {
+                Ok::<_, IoError>(NonNativeTarget::<FF>::from_target_vec(
+                    &src.read_target_vec()?,
+                ))
+            })
+            .collect::<IoResult<_>>()?;
+        let sum = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let overflow = U32Target(src.read_target()?);
+
+        Ok(Self {
+            summands,
+            sum,
+            overflow,
+            _phantom: PhantomData,
+        })
     }
 }
 
@@ -540,9 +632,13 @@ struct NonNativeSubtractionGenerator<F: RichField + Extendable<D>, const D: usiz
     _phantom: PhantomData<F>,
 }
 
-impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F>
+impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F, D>
     for NonNativeSubtractionGenerator<F, D, FF>
 {
+    fn id(&self) -> String {
+        "NonNativeSubtractionGenerator".into()
+    }
+
     fn dependencies(&self) -> Vec<Target> {
         self.a
             .value
@@ -554,7 +650,11 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
             .collect()
     }
 
-    fn run_once(&self, witness: &PartitionWitness<F>, out_buffer: &mut GeneratedValues<F>) {
+    fn run_once(
+        &self,
+        witness: &PartitionWitness<F>,
+        out_buffer: &mut GeneratedValues<F>,
+    ) -> Result<()> {
         let a = FF::from_noncanonical_biguint(witness.get_biguint_target(self.a.value.clone()));
         let b = FF::from_noncanonical_biguint(witness.get_biguint_target(self.b.value.clone()));
         let a_biguint = a.to_canonical_biguint();
@@ -567,8 +667,33 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
             (modulus + a_biguint - b_biguint, true)
         };
 
-        out_buffer.set_biguint_target(&self.diff.value, &diff_biguint);
-        out_buffer.set_bool_target(self.overflow, overflow);
+        out_buffer.set_biguint_target(&self.diff.value, &diff_biguint)?;
+        out_buffer.set_bool_target(self.overflow, overflow)
+    }
+
+    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
+        dst.write_target_vec(&self.a.to_target_vec())?;
+        dst.write_target_vec(&self.b.to_target_vec())?;
+        dst.write_target_vec(&self.diff.to_target_vec())?;
+        dst.write_target_bool(self.overflow)
+    }
+
+    fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
+        let a = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let b = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let diff = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let overflow = src.read_target_bool()?;
+
+        Ok(Self {
+            a,
+            b,
+            diff,
+            overflow,
+            _phantom: PhantomData,
+        })
     }
 }
 
@@ -581,9 +706,13 @@ struct NonNativeMultiplicationGenerator<F: RichField + Extendable<D>, const D: u
     _phantom: PhantomData<F>,
 }
 
-impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F>
+impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F, D>
     for NonNativeMultiplicationGenerator<F, D, FF>
 {
+    fn id(&self) -> String {
+        "NonNativeMultiplicationGenerator".into()
+    }
+
     fn dependencies(&self) -> Vec<Target> {
         self.a
             .value
@@ -595,7 +724,11 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
             .collect()
     }
 
-    fn run_once(&self, witness: &PartitionWitness<F>, out_buffer: &mut GeneratedValues<F>) {
+    fn run_once(
+        &self,
+        witness: &PartitionWitness<F>,
+        out_buffer: &mut GeneratedValues<F>,
+    ) -> Result<()> {
         let a = FF::from_noncanonical_biguint(witness.get_biguint_target(self.a.value.clone()));
         let b = FF::from_noncanonical_biguint(witness.get_biguint_target(self.b.value.clone()));
         let a_biguint = a.to_canonical_biguint();
@@ -606,8 +739,33 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
         let modulus = FF::order();
         let (overflow_biguint, prod_reduced) = prod_biguint.div_rem(&modulus);
 
-        out_buffer.set_biguint_target(&self.prod.value, &prod_reduced);
-        out_buffer.set_biguint_target(&self.overflow, &overflow_biguint);
+        out_buffer.set_biguint_target(&self.prod.value, &prod_reduced)?;
+        out_buffer.set_biguint_target(&self.overflow, &overflow_biguint)
+    }
+
+    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
+        dst.write_target_vec(&self.a.to_target_vec())?;
+        dst.write_target_vec(&self.b.to_target_vec())?;
+        dst.write_target_vec(&self.prod.to_target_vec())?;
+        dst.write_target_vec(&self.overflow.to_target_vec())
+    }
+
+    fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
+        let a = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let b = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let prod = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let overflow = BigUintTarget::from_target_vec(&src.read_target_vec()?);
+
+        Ok(Self {
+            a,
+            b,
+            prod,
+            overflow,
+            _phantom: PhantomData,
+        })
     }
 }
 
@@ -619,14 +777,22 @@ struct NonNativeInverseGenerator<F: RichField + Extendable<D>, const D: usize, F
     _phantom: PhantomData<F>,
 }
 
-impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F>
+impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F, D>
     for NonNativeInverseGenerator<F, D, FF>
 {
+    fn id(&self) -> String {
+        "NonNativeInverseGenerator".into()
+    }
+
     fn dependencies(&self) -> Vec<Target> {
         self.x.value.limbs.iter().map(|&l| l.0).collect()
     }
 
-    fn run_once(&self, witness: &PartitionWitness<F>, out_buffer: &mut GeneratedValues<F>) {
+    fn run_once(
+        &self,
+        witness: &PartitionWitness<F>,
+        out_buffer: &mut GeneratedValues<F>,
+    ) -> Result<()> {
         let x = FF::from_noncanonical_biguint(witness.get_biguint_target(self.x.value.clone()));
         let inv = x.inverse();
 
@@ -636,8 +802,30 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
         let modulus = FF::order();
         let (div, _rem) = prod.div_rem(&modulus);
 
-        out_buffer.set_biguint_target(&self.div, &div);
-        out_buffer.set_biguint_target(&self.inv, &inv_biguint);
+        out_buffer.set_biguint_target(&self.div, &div)?;
+        out_buffer.set_biguint_target(&self.inv, &inv_biguint)
+    }
+
+    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
+        dst.write_target_vec(&self.x.to_target_vec())?;
+        dst.write_target_vec(&self.inv.to_target_vec())?;
+        dst.write_target_vec(&self.div.to_target_vec())
+    }
+
+    fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
+        let x = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
+        let inv = BigUintTarget::from_target_vec(&src.read_target_vec()?);
+        let div = BigUintTarget::from_target_vec(&src.read_target_vec()?);
+
+        Ok(Self {
+            x,
+            inv,
+            div,
+            _phantom: PhantomData,
+        })
     }
 }
 

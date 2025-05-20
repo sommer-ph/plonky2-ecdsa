@@ -32,6 +32,7 @@ const A2: Secp256K1Scalar = Secp256K1Scalar([6323353552219852760, 14980988506747
 const B2: Secp256K1Scalar = Secp256K1Scalar([16747920425669159701, 3496713202691238861, 0, 0]);
 
 /// Algorithm 15.41 in Handbook of Elliptic and Hyperelliptic Curve Cryptography.
+///
 /// Decompose a scalar `k` into two small scalars `k1, k2` with `|k1|, |k2| < √p` that satisfy
 /// `k1 + s * k2 = k`.
 /// Returns `(|k1|, |k2|, k1 < 0, k2 < 0)`.
@@ -76,6 +77,7 @@ pub fn decompose_secp256k1_scalar(
 }
 
 /// See Section 15.2.1 in Handbook of Elliptic and Hyperelliptic Curve Cryptography.
+///
 /// GLV scalar multiplication `k * P = k1 * P + k2 * psi(P)`, where `k = k1 + s * k2` is the
 /// decomposition computed in `decompose_secp256k1_scalar(k)` and `psi` is the Secp256k1
 /// endomorphism `psi: (x, y) |-> (beta * x, y)` equivalent to scalar multiplication by `s`.
