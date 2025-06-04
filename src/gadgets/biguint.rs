@@ -157,12 +157,16 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
         let mut combined_limbs = vec![];
         let mut carry = self.zero_u32();
         for i in 0..num_limbs {
-            let a_limb = (i < a.num_limbs())
-                .then(|| a.limbs[i])
-                .unwrap_or_else(|| self.zero_u32());
-            let b_limb = (i < b.num_limbs())
-                .then(|| b.limbs[i])
-                .unwrap_or_else(|| self.zero_u32());
+            let a_limb = if i < a.num_limbs() {
+                a.limbs[i]
+            } else {
+                self.zero_u32()
+            };
+            let b_limb = if i < b.num_limbs() {
+                b.limbs[i]
+            } else {
+                self.zero_u32()
+            };
 
             let (new_limb, new_carry) = self.add_many_u32(&[carry, a_limb, b_limb]);
             carry = new_carry;
