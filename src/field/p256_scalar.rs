@@ -98,11 +98,10 @@ impl Field for P256Scalar {
 
     // n − 1 (little-endian 64-bit limbs)
     const NEG_ONE: Self = Self([
-        0x0592D7FBB41E6602 - 1, /* we’ll overwrite below – see calc */
-        // placeholder
-        0,
-        0,
-        0,
+        0xF3B9CAC2FC632550,
+        0xBCE6FAADA7179E84,
+        0xFFFFFFFFFFFFFFFF,
+        0xFFFFFFFF00000000,
     ]);
 
     const TWO_ADICITY: usize = 4; // ν₂(n-1) = 4
