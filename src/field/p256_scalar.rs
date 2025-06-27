@@ -260,11 +260,16 @@ impl Product for P256Scalar {
 impl Div for P256Scalar {
     type Output = Self;
     fn div(self, rhs: Self) -> Self {
-        self * rhs.inverse()
+        p256_scalar_div(self, rhs)
     }
 }
 impl DivAssign for P256Scalar {
     fn div_assign(&mut self, rhs: Self) {
         *self = *self / rhs;
     }
+}
+
+// Factored out division function to silence Clippy.
+fn p256_scalar_div(x: P256Scalar, y: P256Scalar) -> P256Scalar {
+    x * y.inverse()
 }
