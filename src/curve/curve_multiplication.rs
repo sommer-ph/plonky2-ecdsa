@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 use core::ops::Mul;
+use num::Integer;
 
 use plonky2::field::types::{Field, PrimeField};
 
@@ -85,7 +86,7 @@ impl<C: Curve> Mul<ProjectivePoint<C>> for CurveScalar<C> {
 #[allow(clippy::assertions_on_constants)]
 fn to_digits<C: Curve>(x: &C::ScalarField) -> Vec<u64> {
     debug_assert!(
-        64 % WINDOW_BITS == 0,
+        64.is_multiple_of(&WINDOW_BITS),
         "For simplicity, only power-of-two window sizes are handled for now"
     );
     let digits_per_u64 = 64 / WINDOW_BITS;
