@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use plonky2::field::extension::Extendable;
 use plonky2::field::types::Sample;
 use plonky2::hash::hash_types::RichField;
-use plonky2::iop::target::BoolTarget;
+use plonky2::iop::target::{BoolTarget, Target};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
 
 use crate::curve::curve_types::{AffinePoint, Curve, CurveScalar};
@@ -34,6 +34,13 @@ pub trait CircuitBuilderCurve<F: RichField + Extendable<D>, const D: usize> {
     );
 
     fn add_virtual_affine_point_target<C: Curve>(&mut self) -> AffinePointTarget<C>;
+
+    /// Randomly access a constant array of affine points.
+    fn random_access_affine_point<C: Curve>(
+        &mut self,
+        access_index: Target,
+        points: &[AffinePoint<C>],
+    ) -> AffinePointTarget<C>;
 
     fn curve_assert_valid<C: Curve>(&mut self, p: &AffinePointTarget<C>);
 
@@ -99,6 +106,19 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         let y = self.add_virtual_nonnative_target();
 
         AffinePointTarget { x, y }
+    }
+
+    fn random_access_affine_point<C: Curve>(
+        &mut self,
+        access_index: Target,
+        points: &[AffinePoint<C>],
+    ) -> AffinePointTarget<C> {
+        use crate::gadgets::curve_windowed_mul::CircuitBuilderWindowedMul;
+        let pts: Vec<_> = points
+            .iter()
+            .map(|p| self.constant_affine_point(*p))
+            .collect();
+        self.random_access_curve_points(access_index, pts)
     }
 
     fn curve_assert_valid<C: Curve>(&mut self, p: &AffinePointTarget<C>) {
