@@ -7,3 +7,7 @@ pub mod ecdsa;
 pub mod glv;
 pub mod nonnative;
 pub mod split_nonnative;
+#[cfg(feature = "static-issuer")]
+pub mod lookup_tables;
+#[cfg(feature = "static-issuer")]
+pub mod fixed_mul_static_q;

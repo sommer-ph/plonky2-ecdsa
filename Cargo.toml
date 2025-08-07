@@ -4,19 +4,37 @@ description = "ECDSA gadget for Plonky2"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
 edition = "2021"
+build = "build.rs"
 
 [features]
 parallel = ["plonky2_maybe_rayon/parallel", "plonky2/parallel"]
+static-issuer = []
 
 [dependencies]
 anyhow = { version = "1.0.40", default-features = false }
 itertools = { version = "0.10.0", default-features = false }
 num = { version = "0.4.0", default-features = false }
-plonky2 = { git = "https://github.com/0xPolygonZero/plonky2" }
-plonky2_maybe_rayon = { git = "https://github.com/0xPolygonZero/plonky2" }  
+plonky2 = { git = "https://github.com/sommer-ph/plonky2", branch = "main" }
+plonky2_maybe_rayon = { git = "https://github.com/sommer-ph/plonky2", branch = "main" }
 plonky2_u32 = { git = "https://github.com/ax0/plonky2-u32" }
 rand = "0.8.4"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
 rand = { version = "0.8.4", default-features = false, features = ["getrandom"] }
+
+[build-dependencies]
+p256 = "0.13"
+num-bigint = "0.4"
+
+[patch."https://github.com/0xPolygonZero/plonky2"]
+plonky2 = { git = "https://github.com/sommer-ph/plonky2", branch = "main" }
+plonky2_field = { git = "https://github.com/sommer-ph/plonky2", branch = "main" }
+plonky2_maybe_rayon = { git = "https://github.com/sommer-ph/plonky2", branch = "main" }
+plonky2_util = { git = "https://github.com/sommer-ph/plonky2", branch = "main" }
+
+[patch."https://github.com/0xPARC/plonky2"]
+plonky2 = { git = "https://github.com/sommer-ph/plonky2", branch = "main" }
+plonky2_field = { git = "https://github.com/sommer-ph/plonky2", branch = "main" }
+plonky2_maybe_rayon = { git = "https://github.com/sommer-ph/plonky2", branch = "main" }
+plonky2_util = { git = "https://github.com/sommer-ph/plonky2", branch = "main" }
